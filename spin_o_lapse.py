@@ -21,6 +21,7 @@ def get_snaps():
     snaps.remove("")
     snaps = [[x.split()[0], x.split()[4]] for x in snaps]
     snaps.remove(["NAME", "MOUNTPOINT"])
+    snaps = {snap[0].split("@")[-1][0:8]: snap for snap in snaps}.values()
     return sorted(snaps, key=customsorter)
 
 
