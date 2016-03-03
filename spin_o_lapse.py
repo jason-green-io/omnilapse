@@ -37,7 +37,7 @@ def sun(angle):
 
 if __name__ == "__main__":
     # Other config stuff
-    lapse360folder = "/spin-o-lapse"
+    lapse360folder = "./spin-o-lapse"
     chunky = "./ChunkyLauncher.jar"
     java = "/Applications/Minecraft.app/Contents/runtime/jre-x64/1.8.0_60/bin/java"
     res = sys.argv[1].split("x")
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     spp = int(sys.argv[2])
     coords = tuple(sys.argv[3:6])
     coordstext = "x" + coords[0] + "y" + coords[1] + "z" + coords[2]
-
+    
     fps = "12"
     print spp, coords
     # Set 360 pano mode
@@ -58,8 +58,10 @@ if __name__ == "__main__":
 
     # Create the folder for all the files
     folder = lapse360folder + "/" + coordstext
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+    noexists = not os.path.exists(folder)
+    if noexists or len(sys.argv) == 7:
+        if noexists:
+            os.makedirs(folder)
 
         # Load the default skeleton config file
         config = json.load(open("skel.json", "r"))
@@ -134,9 +136,9 @@ if __name__ == "__main__":
         snapshotenum = enumerate(snapshots)
 
         # Generate all the frames!
-        redo = [170,187,163,226,224,114,243,102,260,97]
+        redo = [24]
         finalsnaps = list(snapshotenum)
-        # finalsnaps = [finalsnaps[x] for x in redo]
+        finalsnaps = [finalsnaps[x] for x in redo]
         for snap in finalsnaps:
             # Name it meaningfully
             name = snap[1][0].split("@")[-1] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
