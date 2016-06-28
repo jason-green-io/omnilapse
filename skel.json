@@ -20,6 +20,7 @@
   "waterOpacity": 0.42,
   "waterVisibility": 9.0,
   "useCustomWaterColor": false,
+  "renderActors": false,
   "fogColor": {
     "red": 0.42814502293337064,
     "green": 0.5858024691358026,

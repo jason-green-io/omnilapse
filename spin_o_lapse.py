@@ -5,7 +5,7 @@ import glob
 import os
 import subprocess
 import time
-
+import datetime
 
 def customsorter(snap):
     """
@@ -15,52 +15,86 @@ def customsorter(snap):
 
 
 def get_snaps():
-    
+    """
+    go get the list of snapshots from zfs
+    """
     
     snaps = subprocess.check_output("sudo zfs list -t snapshot", shell=True).split("\n")
     snaps.remove("")
-    snaps = [[x.split()[0], x.split()[4]] for x in snaps]
-    snaps.remove(["NAME", "MOUNTPOINT"])
-    snaps = {snap[0].split("@")[-1][0:8]: snap for snap in snaps}.values()
-    return sorted(snaps, key=customsorter)
+    snaps = [[x.split()[0], x.split()[4]] for x in snaps if "barlynaland" in x]
 
+
+    finalsnaps = sorted(snaps, key=customsorter)
+    print(finalsnaps[0], finalsnaps[-1])
+    return finalsnaps
 
 
 def sun(angle):
     """
-    return the azimuth and altitude components whn given a 0-180 degree arc
+    return the azimuth and altitude components when given a 0-180 degree arc
     """
     az = 0 if angle <= 90 else 180
     al = angle if angle <= 90 else 180 - angle
     return (az, al)
 
+def render():
+    jsonfilename = "{}/{}.json".format(folder, name)
+    pngfilename = "{}/{}-{}".format(folder, name, str(spp))            
+
+
+    config["camera"]["projectionMode"] = "ODS_LEFT"
+    json.dump(config, open(jsonfilename, "w"))
+
+
+    command = "{} -jar {} -scene-dir {}/ -render {}".format(java, chunky, folder, name)
+    subprocess.call(command, shell=True)
+    subprocess.call("convert " + pngfilename  + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + pngfilename + "-ODS_LEFT-annotated.png", shell=True)
+
+
+    config["camera"]["projectionMode"] = "ODS_RIGHT"
+    json.dump(config, open(jsonfilename, "w"))
+
+
+    command = "{} -jar {} -scene-dir {}/ -render {}".format(java, chunky, folder, name)
+    subprocess.call(command, shell=True)
+    subprocess.call("convert " + pngfilename  + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + pngfilename + "-ODS_RIGHT-annotated.png", shell=True)
+
+    subprocess.call("convert " + pngfilename + "-ODS_LEFT-annotated.png " + pngfilename + "-ODS_RIGHT-annotated.png -append " + pngfilename + "-combined-annotated.png", shell=True)
 
 
 if __name__ == "__main__":
+
+    subprocess.call("sudo zfs destroy pool/test", shell=True)
+    
     # Other config stuff
     lapse360folder = "./spin-o-lapse"
-    chunky = "./ChunkyLauncher.jar"
-    java = "/Applications/Minecraft.app/Contents/runtime/jre-x64/1.8.0_60/bin/java"
+    chunky = "./ChunkyLaunchernew.jar"
+    java = "java"
     res = sys.argv[1].split("x")
-    print res
+
     spp = int(sys.argv[2])
     coords = tuple(sys.argv[3:6])
     coordstext = "x" + coords[0] + "y" + coords[1] + "z" + coords[2]
+    startdate = sys.argv[6]
+    stopdate = sys.argv[7]
+    interval = datetime.timedelta(hours=6)
     
-    fps = "12"
-    print spp, coords
+    fps = "1/2"
+
+    print( "Resolution of {} with an spp of {} at {}. Going from {} to {}. {} between frames, every frame displayed {} seconds".format(res, spp, coords, startdate, stopdate, interval, fps))
+
     # Set 360 pano mode
     panomode = True
 
     # Spin?
     spin = False
-    # spp = 20 
-    # Coordinates
+
 
     # Create the folder for all the files
     folder = lapse360folder + "/" + coordstext
     noexists = not os.path.exists(folder)
-    if noexists or len(sys.argv) == 7:
+
+    if noexists or "regen" in sys.argv:
         if noexists:
             os.makedirs(folder)
 
@@ -68,8 +102,6 @@ if __name__ == "__main__":
         config = json.load(open("skel.json", "r"))
 
         # use 0 if you want everything
-        startdate = 0
-        stopdate = 201602262000
         distance = 90
         initialangle = 45
 
@@ -78,14 +110,16 @@ if __name__ == "__main__":
         if panomode:
             config["height"] = int(res[1])
             config["width"] = int(res[0])
-            config["camera"]["orientation"]["pitch"] = math.radians(-90)
+            config["sppTarget"] = spp
+            config["camera"]["orientation"]["pitch"] = math.radians(90)
 
-            config["camera"]["projectionMode"] = "PANORAMIC"
+            # config["camera"]["projectionMode"] = "PANORAMIC"
+            config["camera"]["projectionMode"] = "ODS_RIGHT"
             config["camera"]["fov"] = 180
         else:
             pitch = math.radians(50)
             config["camera"]["orientation"]["pitch"] = pitch - math.radians(90)
-            fps = "24"
+            fps = "1/2"
 
         # set coords if we're not spinning
         if not spin:
@@ -95,24 +129,46 @@ if __name__ == "__main__":
             config["camera"]["position"]["y"] = int(coords[1])
             config["camera"]["position"]["z"] = int(coords[2])
 
-        # Get the list of snapshots fom the filesystem
-        # snapshotsinitial = sorted(glob.glob("/minecraft/worlddisk*/.zfs/snapshot/2015*000?"), key=customsorter)
-        snapshotsinitial = [snap for snap in get_snaps() if int(customsorter(snap)) >= startdate and int(customsorter(snap)) <= stopdate]
+    
+        def frange(startdate, stopdate, interval):
+            start = datetime.datetime.strptime(str(startdate), "%Y%m%d%H%M")
+            stop = datetime.datetime.strptime(str(stopdate), "%Y%m%d%H%M")
+            x = start
+            while x < stop:
+                yield x
+                x += interval
 
 
+        choppedsnaps = [x for x in get_snaps() if (datetime.datetime.strptime(customsorter(x), "%Y%m%d%H%M") >= datetime.datetime.strptime(str(startdate), "%Y%m%d%H%M") and datetime.datetime.strptime(customsorter(x), "%Y%m%d%H%M") <= datetime.datetime.strptime(str(stopdate), "%Y%m%d%H%M"))]
 
-        num = 360 - 48
-        snapshotsdistributed = [snapshotsinitial[int(math.floor(deg/float(num) * len(snapshotsinitial)))] for deg in xrange(num)]
+
+        print("There's {} snapshots to pick from in the timespan given".format(len(choppedsnaps)))
+
+   
+        snapshots = []
+
+        index = 0
+        maxlen = len(choppedsnaps)
+
+        for each in frange(startdate, stopdate, interval):
+            if each <= datetime.datetime.strptime(customsorter(choppedsnaps[index]), "%Y%m%d%H%M"):
+                snapshots.append(choppedsnaps[index])
+                # print(each,choppedsnaps[index])
+            else:
+                while index < maxlen - 1:
+                    index += 1
+                    if each < datetime.datetime.strptime(customsorter(choppedsnaps[index]), "%Y%m%d%H%M"):
+                        index -= 1
+                        break
+                snapshots.append(choppedsnaps[index])
+                # print(each,choppedsnaps[index])
+
         
-        snapshots = [snapshotsdistributed[0]] * 24 + snapshotsdistributed + [snapshotsdistributed[-1]] * 24
-        
-        #snapshots = snapshots[106:107]
-        
-        print snapshots[0], snapshots[-1]
+        print("First snapshot {}\nLast snapshot {}".format(snapshots[0], snapshots[-1]))
 
         # Calculate the current chunk based on given coods
         currentchunk = [int(coords[0]) // 16, int(coords[2]) // 16]
-        print currentchunk
+        print("The camera is in chunk {}".format(currentchunk))
 
         chunkradius =  24
 
@@ -124,11 +180,6 @@ if __name__ == "__main__":
         # Set the chunklist for Chunky
         config["chunkList"] = chunklist
 
-        config["sppTarget"] = spp
-
-
-        # Name is pased on the coordinates to keep everything separate
-
 
         # How many snapshots are there?
         numsnapshots = len(snapshots)
@@ -137,14 +188,14 @@ if __name__ == "__main__":
         snapshotenum = enumerate(snapshots)
 
         # Generate all the frames!
-        redo = [24]
+
         finalsnaps = list(snapshotenum)
-        finalsnaps = [finalsnaps[x] for x in redo]
+
         for snap in finalsnaps:
             # Name it meaningfully
             name = snap[1][0].split("@")[-1] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
             config["name"] = name
-            config["world"]["path"] = snap[1][1]
+            config["world"]["path"] = "/Volumes/pool/test"
             # Set the coords so they rotate around the coords given using magic, I mean
             # math
             if spin:
@@ -158,60 +209,70 @@ if __name__ == "__main__":
             az, al = sun(sunangle)
             config["sun"]["azimuth"] = math.radians(az)
             config["sun"]["altitude"] = math.radians(al)
+            
             # I want to know if it'll finish befor the heat death of the universe, get a
             # start time
             start = time.time()
-            # write the scene file
-            json.dump(config, open(folder + "/" +  name + ".json", "w"))
 
-            subprocess.call("sudo zfs mount " + snap[1][0], shell=True)
-            # run chunky with the scene file on the snapshot
-            command = java + " -jar " + chunky + " -scene-dir " + folder + "/" + " -render " + name
-            subprocess.call(command, shell=True)
-            # add the name of the frame to the png, for posterity and troubleshooting
+            subprocess.call("sudo zfs clone -o readonly=on " + snap[1][0] + " pool/test", shell=True)
+
+            render()
             
-            subprocess.call("sudo zfs unmount " + snap[1][0], shell=True)
-            subprocess.call("convert " + folder + "/" + name + "-" + str(spp) + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + folder + "/" + name + "-" + str(spp) + "-annotated.png", shell=True)
-            # cleanup
+            subprocess.call("sudo zfs destroy pool/test", shell=True)
+
+            
             for f in glob.glob(folder + "/" + name + "*.dump"): os.remove(f)
             try:
-                os.remove(folder + "/" + name + "-"+ str(spp) + ".png")
+                os.remove(pngfilename + ".png")
             except:
                 pass
+
             # is the universe over?
+            
             stop = time.time()
+
             elapsed = stop - start
-            # tell me how muc more coffee I have to dring until it's done
+
+            # tell me how much more coffee I have to dring until it's done
             print str(snap[0]) + " " + str(100.0 * (snap[0] + 1)/ numsnapshots) + " Hours left: " + str(elapsed * (numsnapshots - snap[0] + 1)/60/60)
     else:
         files = glob.glob(folder + "/*.json")
         filesenum = enumerate(files)
         numfiles = len(files)
+
         for f in filesenum:
             start = time.time()
+
+            # load the json, change it, and dump it again
             with open(f[1], "r") as scenefile:
-                scenefilejson = json.load(scenefile)
-            scenefilejson["sppTarget"] = spp
-            scenefilejson["height"] = int(res[1])
-            scenefilejson["width"] = int(res[0])
-            json.dump(scenefilejson, open(f[1], "w+"))
+                config = json.load(scenefile)
+            config["sppTarget"] = spp
+            config["height"] = int(res[1])
+            config["width"] = int(res[0])
+            
             name = f[1].split("/")[-1].rsplit(".", 1)[0]
-            command = java + " -jar " + chunky + " --verbose -scene-dir " + folder + "/" + " -render " + name
-            subprocess.call(command, shell=True)
-            subprocess.call("convert " + folder + "/" + name + "-" + str(spp) + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + folder + "/" + name + "-" + str(spp) + "-annotated.png", shell=True)
+
+            render()
+
             stop = time.time()
             elapsed = stop - start
+
+
+
             # tell me how much more coffee I have to dring until it's done
             print f[1] + " " + str(100.0 * (f[0] + 1)/ numfiles) + " Hours left: " + str(elapsed * (numfiles - f[0] + 1)/60/60)
 
 
     # Make a video with all the frames
-    ffmpegcommand = "ffmpeg -y -framerate " + fps + " -pattern_type glob -i \"" + folder + "/*" + str(spp) + "-annotated.png\" -c:v libx264 -pix_fmt yuv420p " + lapse360folder + "/" + coordstext + ".mp4"
+    ffmpegcommand = "ffmpeg -y -framerate " + fps + " -pattern_type glob -i \"" + folder + "/*" + str(spp) + "-combined-annotated.png\" -c:v libx264 -r 30 -pix_fmt yuv420p " + lapse360folder + "/" + coordstext + ".mp4"
     subprocess.call(ffmpegcommand, shell=True)
-    # send me a notification if I fell asleep
+    
+    # scale the video for poor old YouTube
+    ffmpegcommand = "ffmpeg -i " + lapse360folder + "/" + coordstext + ".mp4" + " -vf scale=3840:2160 " + lapse360folder + "/" + coordstext + "-scaled.mp4"
+    subprocess.call(ffmpegcommand, shell=True)
 
     # Add the 360 youtube metadata to the file
     if panomode:
 
-        metadatacommand = "python /Volumes/TheBigOne/greener/minecraft/spatial-media/spatialmedia -i " + lapse360folder + "/" + coordstext + ".mp4 " + lapse360folder + "/" + coordstext + "-meta.mp4"
+        metadatacommand = "python /Volumes/TheBigOne/greener/minecraft/spatial-media/spatialmedia -i -s top-bottom " + lapse360folder + "/" + coordstext + "-scaled.mp4 " + lapse360folder + "/" + coordstext + "-scaled-meta.mp4"
         subprocess.call(metadatacommand, shell=True)
