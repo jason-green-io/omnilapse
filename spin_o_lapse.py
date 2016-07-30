@@ -49,6 +49,11 @@ def render():
     command = "{} -jar {} -scene-dir {}/ -render {}".format(java, chunky, folder, name)
     subprocess.call(command, shell=True)
     subprocess.call("convert " + pngfilename  + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + pngfilename + "-ODS_LEFT-annotated.png", shell=True)
+    for f in glob.glob(folder + "/" + name + "*.dump"): os.remove(f)
+    try:
+        os.remove(pngfilename + ".png")
+    except:
+        pass
 
 
     config["camera"]["projectionMode"] = "ODS_RIGHT"
@@ -61,10 +66,15 @@ def render():
 
     subprocess.call("convert " + pngfilename + "-ODS_LEFT-annotated.png " + pngfilename + "-ODS_RIGHT-annotated.png -append " + pngfilename + "-combined-annotated.png", shell=True)
 
+    for f in glob.glob(folder + "/" + name + "*.dump"): os.remove(f)
+    try:
+        os.remove(pngfilename + ".png")
+    except:
+        pass
 
 if __name__ == "__main__":
 
-    subprocess.call("sudo zfs destroy pool/test", shell=True)
+
     
     # Other config stuff
     lapse360folder = "./spin-o-lapse"
@@ -77,10 +87,11 @@ if __name__ == "__main__":
     coordstext = "x" + coords[0] + "y" + coords[1] + "z" + coords[2]
     startdate = sys.argv[6]
     stopdate = sys.argv[7]
-    interval = datetime.timedelta(hours=6)
+    interval = datetime.timedelta(hours=24)
     
-    fps = "1/2"
+    fps = "1"
 
+    subprocess.call("sudo zfs destroy pool/" + coordstext, shell=True)
     print( "Resolution of {} with an spp of {} at {}. Going from {} to {}. {} between frames, every frame displayed {} seconds".format(res, spp, coords, startdate, stopdate, interval, fps))
 
     # Set 360 pano mode
@@ -113,13 +124,13 @@ if __name__ == "__main__":
             config["sppTarget"] = spp
             config["camera"]["orientation"]["pitch"] = math.radians(90)
 
-            # config["camera"]["projectionMode"] = "PANORAMIC"
-            config["camera"]["projectionMode"] = "ODS_RIGHT"
+
+
             config["camera"]["fov"] = 180
         else:
             pitch = math.radians(50)
             config["camera"]["orientation"]["pitch"] = pitch - math.radians(90)
-            fps = "1/2"
+            fps = "1"
 
         # set coords if we're not spinning
         if not spin:
@@ -190,12 +201,13 @@ if __name__ == "__main__":
         # Generate all the frames!
 
         finalsnaps = list(snapshotenum)
-
+        finalsnapstemp = [finalsnaps[219], finalsnaps[229], finalsnaps[333]]
+        finalsnaps = finalsnapstemp
         for snap in finalsnaps:
             # Name it meaningfully
             name = snap[1][0].split("@")[-1] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
             config["name"] = name
-            config["world"]["path"] = "/Volumes/pool/test"
+            config["world"]["path"] = "/Volumes/pool/" + coordstext
             # Set the coords so they rotate around the coords given using magic, I mean
             # math
             if spin:
@@ -214,19 +226,14 @@ if __name__ == "__main__":
             # start time
             start = time.time()
 
-            subprocess.call("sudo zfs clone -o readonly=on " + snap[1][0] + " pool/test", shell=True)
+            subprocess.call("sudo zfs clone -o readonly=on " + snap[1][0] + " pool/" + coordstext, shell=True)
 
             render()
             
-            subprocess.call("sudo zfs destroy pool/test", shell=True)
+            subprocess.call("sudo zfs destroy pool/" + coordstext, shell=True)
 
             
-            for f in glob.glob(folder + "/" + name + "*.dump"): os.remove(f)
-            try:
-                os.remove(pngfilename + ".png")
-            except:
-                pass
-
+     
             # is the universe over?
             
             stop = time.time()
@@ -234,7 +241,7 @@ if __name__ == "__main__":
             elapsed = stop - start
 
             # tell me how much more coffee I have to dring until it's done
-            print str(snap[0]) + " " + str(100.0 * (snap[0] + 1)/ numsnapshots) + " Hours left: " + str(elapsed * (numsnapshots - snap[0] + 1)/60/60)
+            print("Just finished snapshot {} of {}, {} percent. {} hours left.".format( str(snap[0]), numsnapshots, str(100.0 * (snap[0] + 1)/ numsnapshots), str(elapsed * (numsnapshots - snap[0] + 1)/60/60)))
     else:
         files = glob.glob(folder + "/*.json")
         filesenum = enumerate(files)
@@ -260,7 +267,8 @@ if __name__ == "__main__":
 
 
             # tell me how much more coffee I have to dring until it's done
-            print f[1] + " " + str(100.0 * (f[0] + 1)/ numfiles) + " Hours left: " + str(elapsed * (numfiles - f[0] + 1)/60/60)
+            print("Just finished snapshot {} of {}, {} percent. {} hours left.".format( str(f[0]), numfiles, str(100.0 * (f[0] + 1)/ numfiles), str(elapsed * (numfiles - f[0] + 1)/60/60)))
+
 
 
     # Make a video with all the frames
@@ -268,7 +276,7 @@ if __name__ == "__main__":
     subprocess.call(ffmpegcommand, shell=True)
     
     # scale the video for poor old YouTube
-    ffmpegcommand = "ffmpeg -i " + lapse360folder + "/" + coordstext + ".mp4" + " -vf scale=3840:2160 " + lapse360folder + "/" + coordstext + "-scaled.mp4"
+    ffmpegcommand = "ffmpeg -y -i " + lapse360folder + "/" + coordstext + ".mp4" + " -vf scale=3840:2160 " + lapse360folder + "/" + coordstext + "-scaled.mp4"
     subprocess.call(ffmpegcommand, shell=True)
 
     # Add the 360 youtube metadata to the file
