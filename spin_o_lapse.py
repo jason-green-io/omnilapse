@@ -10,8 +10,8 @@ import argparse
 
 
 lapse360folder = "./spin-o-lapse"
-chunky = "./ChunkyLaunchernew.jar"
-java = "java"
+chunky = "./ChunkyLauncher.jar"
+java = "java -Xmx6G -Xms6G"
 
 
 
@@ -60,9 +60,10 @@ def render(args):
 
     folder = lapse360folder + "/" + coordstext
     files = glob.glob(folder + "/*.json")
+    files.insert(0, files.pop())
     filesenum = enumerate(files)
     numfiles = len(files)
-    subprocess.call("sudo zfs destroy pool2/" + coordstext, shell=True)            
+    
     for f in filesenum:
         print(f)
         start = time.time()
@@ -75,12 +76,15 @@ def render(args):
         config["height"] = int(res[1])
         config["width"] = int(res[0])
 
-        snap = config["zfssnapshot"]
+
         name = f[1].split("/")[-1].rsplit(".", 1)[0]
         notexist = not os.path.exists(folder + "/" + name + ".octree")
 
         if notexist:
-            subprocess.call("sudo zfs clone -o readonly=on " + snap + " pool2/" + coordstext, shell=True)
+            snap = config["zfssnapshot"]
+            pool = snap.split('/')[0]
+            subprocess.call("sudo zfs destroy " + pool + "/" + coordstext, shell=True)            
+            subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
 
         pngfilename = "{}/{}-{}".format(folder, name, str(spp))            
 
@@ -137,7 +141,11 @@ def render(args):
 
             
         if notexist:
-            subprocess.call("sudo zfs destroy pool2/" + coordstext, shell=True)            
+            snap = config["zfssnapshot"]
+            pool = snap.split('/')[0]
+            subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
+
+
 
         stop = time.time()
         elapsed = stop - start
@@ -170,7 +178,7 @@ def genjson(args):
     config = json.load(open("skel.json", "r"))
 
     # use 0 if you want everything
-    distance = 120
+    distance = 1800
     initialangle = 45
 
 
@@ -185,18 +193,24 @@ def genjson(args):
         config["camera"]["fov"] = 180
 
     if mode == "2d":
-        pitch = math.radians(50)
+        pitch = math.radians(34.22)
         config["camera"]["orientation"]["pitch"] = pitch - math.radians(90)
 
 
     # set coords if we're not spinning
     if not spin:
+
         angle = initialangle
+        config["camera"]["orientation"]["yaw"] = math.radians(angle)
+        config["camera"]["position"]["x"] = x + math.cos(math.radians(angle)) * math.cos(pitch) * distance
+        config["camera"]["position"]["y"] = y + math.sin(pitch) * distance
+        config["camera"]["position"]["z"] = z - math.sin(math.radians(angle)) * math.cos(pitch) * distance
+        """
         config["camera"]["orientation"]["yaw"] = math.radians(angle)
         config["camera"]["position"]["x"] = x
         config["camera"]["position"]["y"] = y
         config["camera"]["position"]["z"] = z
-
+        """
     # Calculate which snapshots to render
     
     def frange(startdate, stopdate, interval):
@@ -247,7 +261,8 @@ def genjson(args):
     currentchunk = [x // 16, z // 16]
     print("The camera is in chunk {}".format(currentchunk))
 
-    chunkradius =  24
+    chunkradius =  64
+
 
     # Generate the list of chunks to load based on chunkradius
     chunklist = [[cx, cy] for cx in xrange(currentchunk[0] - chunkradius, currentchunk[0] + chunkradius + 1) for cy in xrange(currentchunk[1] - chunkradius, currentchunk[1] + chunkradius + 1)]
@@ -274,8 +289,11 @@ def genjson(args):
         print(snap)
         name = snap[1][0].split("@")[-1] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
         config["name"] = name
-        config["world"]["path"] = "/Volumes/pool2/" + coordstext
+        pool = snap[1][0].split('/')[0]
+        config["world"]["path"] = "/Volumes/{}/{}".format(pool, coordstext)
+
         config["zfssnapshot"] = snap[1][0]
+
         # Set the coords so they rotate around the coords given using magic, I mean
         # math
         if spin:
