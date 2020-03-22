@@ -5,7 +5,7 @@ ENV    DEBIAN_FRONTEND noninteractive
 MAINTAINER Jason Green <jason@green.io>
 
 
-RUN    apt-get --yes update
+RUN    apt-get --yes update; \
        apt-get --yes install git wget imagemagick software-properties-common tmux man python python-pip python-dev vim htop ffmpeg curl
 
 #RUN    pip install nbt2yaml watchdog slacker requests python-daemon twisted pyyaml websocket-client slackclient matplotlib
