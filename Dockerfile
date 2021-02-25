@@ -20,9 +20,9 @@ RUN    apt-get --yes update; \
 
 RUN    git clone https://github.com/google/spatial-media.git
        
-COPY   . /spin_o_lapse
+COPY   . /omnilapse
 
-RUN    cd /spin_o_lapse; \
+RUN    cd /omnilapse; \
        curl -O http://chunkyupdate.llbit.se/ChunkyLauncher.jar; \
        java -jar ChunkyLauncher.jar --update; \
        java -jar ChunkyLauncher.jar -download-mc 1.10

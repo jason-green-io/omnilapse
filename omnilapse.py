@@ -9,10 +9,11 @@ import datetime
 import argparse
 
 
-lapse360folder = "./spin-o-lapse"
-chunky = "./ChunkyLauncher.jar"
+lapse360folder = "/Users/greener/omnilapse-output"
+chunky = "/Users/greener/Downloads/ChunkyLauncher.jar"
+#java = "/Users/greener/Downloads/zulu15.29.15-ca-fx-jdk15.0.2-macosx_x64/bin/java -Xmx6G -Xms6G"
 java = "java -Xmx6G -Xms6G"
-
+sceneFolder = "/Users/greener/.chunky/scenes"
 
 
 
@@ -22,22 +23,34 @@ def customsorter(snap):
     """
     sort on the name of the snapshot
     """
-    return snap[0].split("@")[-1]
+    return snap[0]
 
 
 def get_snaps():
     """
     go get the list of snapshots from zfs
     """
+    filenames = []
+    """
+    past to 2020-12-12 Byblos
+    2020-12-13 Barlynaland
+    """
     
-    snaps = subprocess.check_output("sudo zfs list -t snapshot", shell=True).split("\n")
-    snaps.remove("")
-    snaps = [[x.split()[0], x.split()[4]] for x in snaps if "barlynaland" in x]
+    filter_filenames = glob.glob("/Users/greener/backups/*/Barlynaland/world") 
+    filter_filenames += glob.glob("/Users/greener/backups/*/Byblos/world")
+    for f in filter_filenames:
+        filename_split = f.split("/")
+        date_str = filename_split[4].split("_")[-1]
+        server_name = filename_split[5]
+        if date_str >= "2020-12-13" and server_name == "Barlynaland":
+            filenames.append((date_str, f))
+        elif date_str <= "2020-12-13" and server_name == "Byblos":
+            filenames.append((date_str, f))
+        else:
+            pass
 
-
-    finalsnaps = sorted(snaps, key=customsorter)
-    print(finalsnaps[0], finalsnaps[-1])
-    return finalsnaps
+    filenames = sorted(filenames, key=customsorter)
+    return filenames
 
 
 def sun(angle):
@@ -58,9 +71,8 @@ def render(args):
     mode = args.mode
     spp = args.ssp
 
-    folder = lapse360folder + "/" + coordstext
-    files = glob.glob(folder + "/*.json")
-    files.insert(0, files.pop())
+    folder = sceneFolder
+    files = glob.glob(folder + "/*.{}.*/*.json".format(coordstext))
     filesenum = enumerate(files)
     numfiles = len(files)
     
@@ -77,30 +89,33 @@ def render(args):
         config["width"] = int(res[0])
 
 
-        name = f[1].split("/")[-1].rsplit(".", 1)[0]
-        notexist = not os.path.exists(folder + "/" + name + ".octree")
+        name = f[1].split("/")[-1].rsplit(".",1)[0]
+        # notexist = not os.path.exists(folder + "/" + name + ".octree")
 
-        if notexist:
-            snap = config["zfssnapshot"]
-            pool = snap.split('/')[0]
-            subprocess.call("sudo zfs destroy " + pool + "/" + coordstext, shell=True)            
-            subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
+        # if notexist:
+        #     snap = config["zfssnapshot"]
+        #     pool = snap.split('/')[0]
+        #     subprocess.call("sudo zfs destroy " + pool + "/" + coordstext, shell=True)            
+        #     subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
 
-        pngfilename = "{}/{}-{}".format(folder, name, str(spp))            
+        pngfilename = "{}/{}/snapshots/{}-{}.png".format(sceneFolder, name, name, str(spp))            
+        pngfilenameAnnotated = "{}/{}/snapshots/{}-{}-annotated.png".format(sceneFolder, name, name, str(spp))            
 
         if mode == "2d":
             json.dump(config, open(f[1], "w"))
             
-            command = "{} -jar {} -scene-dir {}/ -render {}".format(java, chunky, folder, name)
-            subprocess.call(command, shell=True)
-            subprocess.call("convert " + pngfilename  + ".png -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + pngfilename + "-annotated.png", shell=True)
+            if not os.path.exists(pngfilename):
+                command = "{} -jar {} -f -threads 8 -render {}".format(java, chunky, name)
+                subprocess.call(command, shell=True)
+            else:
+                print("png already generated")
+            
+            if not os.path.exists(pngfilenameAnnotated):
+                subprocess.call("convert " + pngfilename  + " -gravity southeast -stroke '#000C' -strokewidth 2 -annotate 0 \"" + name + "\" -stroke  none -fill white -annotate 0 \"" + name + "\" " + pngfilenameAnnotated, shell=True)
 
-            for each in glob.glob(folder + "/" + name + "*.dump"): os.remove(each)
-
-            try:
-                os.remove(pngfilename + ".png")
-            except:
-                pass
+                # for each in glob.glob(folder + "/" + name + "*.dump"): os.remove(each)
+            else:
+                print("png already annotated")
 
             
         if mode == "3d":
@@ -140,10 +155,10 @@ def render(args):
             subprocess.call("convert " + pngfilename + "-ODS_LEFT-annotated.png " + pngfilename + "-ODS_RIGHT-annotated.png -append " + pngfilename + "-combined-annotated.png", shell=True)
 
             
-        if notexist:
-            snap = config["zfssnapshot"]
-            pool = snap.split('/')[0]
-            subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
+        # if notexist:
+        #     snap = config["zfssnapshot"]
+        #     pool = snap.split('/')[0]
+        #     subprocess.call("sudo zfs clone -o readonly=on " + snap + " " + pool + "/" + coordstext, shell=True)
 
 
 
@@ -169,17 +184,15 @@ def genjson(args):
     interval = datetime.timedelta(hours=args.interval)
     spin = args.spin
 
-    folder = lapse360folder + "/" + coordstext
     
-    if not os.path.exists(folder):
-        os.makedirs(folder)
 
     # Load the default skeleton config file
     config = json.load(open("skel.json", "r"))
 
     # use 0 if you want everything
-    distance = 1800
+    distance = 128
     initialangle = 45
+    dateFormat = "%Y-%m-%d"
 
 
     # Set pano stuff
@@ -214,15 +227,14 @@ def genjson(args):
     # Calculate which snapshots to render
     
     def frange(startdate, stopdate, interval):
-        start = datetime.datetime.strptime(str(startdate), "%Y%m%d%H%M")
-        stop = datetime.datetime.strptime(str(stopdate), "%Y%m%d%H%M")
+        start = datetime.datetime.strptime(str(startdate), dateFormat)
+        stop = datetime.datetime.strptime(str(stopdate), dateFormat)
         blah = start
         while blah < stop:
             yield blah
             blah += interval
 
-
-    choppedsnaps = [asnap for asnap in get_snaps() if (datetime.datetime.strptime(customsorter(asnap), "%Y%m%d%H%M") >= datetime.datetime.strptime(str(startdate), "%Y%m%d%H%M") and datetime.datetime.strptime(customsorter(asnap), "%Y%m%d%H%M") <= datetime.datetime.strptime(str(stopdate), "%Y%m%d%H%M"))]
+    choppedsnaps = [asnap for asnap in get_snaps() if (datetime.datetime.strptime(customsorter(asnap), dateFormat) >= datetime.datetime.strptime(str(startdate), dateFormat) and datetime.datetime.strptime(customsorter(asnap), dateFormat) <= datetime.datetime.strptime(str(stopdate), dateFormat))]
 
 
     print("There's {} snapshots to pick from in the timespan given".format(len(choppedsnaps)))
@@ -234,13 +246,13 @@ def genjson(args):
     maxlen = len(choppedsnaps)
 
     for each in frange(startdate, stopdate, interval):
-        if each <= datetime.datetime.strptime(customsorter(choppedsnaps[index]), "%Y%m%d%H%M"):
+        if each <= datetime.datetime.strptime(customsorter(choppedsnaps[index]), dateFormat):
             snapshots.append(choppedsnaps[index])
             # print(each,choppedsnaps[index])
         else:
             while index < maxlen - 1:
                 index += 1
-                if each < datetime.datetime.strptime(customsorter(choppedsnaps[index]), "%Y%m%d%H%M"):
+                if each < datetime.datetime.strptime(customsorter(choppedsnaps[index]), dateFormat):
                     index -= 1
                     break
             snapshots.append(choppedsnaps[index])
@@ -261,11 +273,11 @@ def genjson(args):
     currentchunk = [x // 16, z // 16]
     print("The camera is in chunk {}".format(currentchunk))
 
-    chunkradius =  64
+    chunkradius =  5
 
 
     # Generate the list of chunks to load based on chunkradius
-    chunklist = [[cx, cy] for cx in xrange(currentchunk[0] - chunkradius, currentchunk[0] + chunkradius + 1) for cy in xrange(currentchunk[1] - chunkradius, currentchunk[1] + chunkradius + 1)]
+    chunklist = [[cx, cy] for cx in range(currentchunk[0] - chunkradius, currentchunk[0] + chunkradius + 1) for cy in range(currentchunk[1] - chunkradius, currentchunk[1] + chunkradius + 1)]
     chunklist = [[c[0], c[1]] for c in chunklist if ((c[0] - currentchunk[0])** 2 + (c[1] - currentchunk[1]) ** 2) <= chunkradius ** 2]
 
     # Set the chunklist for Chunky
@@ -287,12 +299,10 @@ def genjson(args):
     for snap in finalsnaps:
         # Name it meaningfully
         print(snap)
-        name = snap[1][0].split("@")[-1] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
+        name = snap[1][0] + "." + coordstext + "." + str(snap[0]).rjust(5, "0")
         config["name"] = name
-        pool = snap[1][0].split('/')[0]
-        config["world"]["path"] = "/Volumes/{}/{}".format(pool, coordstext)
+        config["world"]["path"] = snap[1][1]
 
-        config["zfssnapshot"] = snap[1][0]
 
         # Set the coords so they rotate around the coords given using magic, I mean
         # math
@@ -307,6 +317,9 @@ def genjson(args):
         az, al = sun(sunangle)
         config["sun"]["azimuth"] = math.radians(az)
         config["sun"]["altitude"] = math.radians(al)
+        folder = sceneFolder + "/" + name
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         jsonfilename = "{}/{}.json".format(folder, name)
         json.dump(config, open(jsonfilename, "w"))
 '''        
@@ -346,9 +359,10 @@ def genvideo(args):
     mode = args.mode
     fps = args.fps
     folder = lapse360folder + "/" + coordstext
-    
+    pngFilesGlob = sceneFolder + "/" + "*" + coordstext + "*/snapshots/*500-annotated.png"  
+ 
     # Make a video with all the frames
-    ffmpegcommand = "ffmpeg -y -framerate " + str(fps) + " -pattern_type glob -i \"" + folder + "/*-annotated.png\" -c:v libx264 -r 30 -pix_fmt yuv420p " + lapse360folder + "/" + coordstext + ".mp4"
+    ffmpegcommand = "ffmpeg -y -framerate " + str(fps) + " -pattern_type glob -i \"" + pngFilesGlob + "\" -c:v libx264 -r 30 -pix_fmt yuv420p " + lapse360folder + "/" + coordstext + ".mp4"
     subprocess.call(ffmpegcommand, shell=True)
 
     if mode == "3d":
